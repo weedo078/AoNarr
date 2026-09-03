@@ -5,7 +5,8 @@ import { parseReleaseTitle, releaseMatchesEpisode } from "./releaseParser.js";
 import { guessTitleFromText, titlesMatch } from "./libraryScan.js";
 import { scoreRelease } from "./customFormatScoring.js";
 import { getBlocklistedTitles } from "./blocklist.js";
-import { downloadClientFromRow, mediaItemFromRow, qualityProfileFromRow } from "../db/mappers.js";
+import { mediaItemFromRow, qualityProfileFromRow } from "../db/mappers.js";
+import { listEnabledDownloadClients } from "./repository/downloadClients.js";
 import { grab, isAlreadyQueued, pickClientForProtocol, type ChosenResult } from "./scheduler.js";
 import type { DownloadClient, SearchResult } from "../types/index.js";
 
@@ -14,10 +15,6 @@ export interface IrcFeedRow {
   name: string;
   announce_regex: string;
   protocol: "torrent" | "usenet";
-}
-
-async function rowsToDownloadClients(): Promise<DownloadClient[]> {
-  return ((await db.prepare("SELECT * FROM download_clients WHERE enabled = 1").all()) as any[]).map(downloadClientFromRow);
 }
 
 /**
@@ -45,7 +42,7 @@ export async function handleAnnounce(feed: IrcFeedRow, messageText: string): Pro
   const baseTitle = guessTitleFromText(releaseTitle);
   if (!baseTitle) return;
 
-  const clients = await rowsToDownloadClients();
+  const clients = await listEnabledDownloadClients();
   if (clients.length === 0) return;
   const targetClient = pickClientForProtocol(clients, feed.protocol);
   if (!targetClient) return;
