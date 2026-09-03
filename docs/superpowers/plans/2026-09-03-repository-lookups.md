@@ -161,7 +161,7 @@ Expected: FAIL — the import `../../src/services/repository/downloadClients.js`
 Create `server/src/services/repository/downloadClients.ts`:
 
 ```ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 import { downloadClientFromRow } from "../../db/mappers.js";
 import type { DownloadClient } from "../../types/index.js";
 
@@ -284,7 +284,7 @@ Expected: FAIL — module `../../src/services/repository/qualityProfiles.js` not
 Create `server/src/services/repository/qualityProfiles.ts`:
 
 ```ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 import { qualityProfileFromRow } from "../../db/mappers.js";
 
 /**
@@ -451,7 +451,7 @@ Expected: FAIL — module `../../src/services/repository/delayProfiles.js` not f
 Create `server/src/services/repository/delayProfiles.ts`:
 
 ```ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 
 /** Shape mirrors the existing scheduler-internal interface, lifted to module scope so any
  * future caller (importer, library scan, recommendations...) can share the same type. */

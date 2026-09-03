@@ -68,7 +68,7 @@ Plain functions that import the global `db` directly, exactly like every other s
 
 ```ts
 // services/repository/downloadClients.ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 import { downloadClientFromRow } from "../../db/mappers.js";
 import type { DownloadClient } from "../../types/index.js";
 
@@ -82,7 +82,7 @@ export async function listEnabledDownloadClients(): Promise<DownloadClient[]> {
 
 ```ts
 // services/repository/qualityProfiles.ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 import { qualityProfileFromRow } from "../../db/mappers.js";
 import type { QualityProfile } from "../../types/index.js";
 
@@ -95,7 +95,7 @@ export async function getQualityProfile(id: number | null): Promise<QualityProfi
 
 ```ts
 // services/repository/delayProfiles.ts
-import { db } from "../../db/asyncDb.js";
+import { db } from "../../db/index.js";
 
 export interface DelayProfile {
   enableUsenet: boolean;
