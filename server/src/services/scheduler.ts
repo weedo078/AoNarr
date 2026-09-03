@@ -9,12 +9,17 @@ import { pickBestAllowedQuality, preferredSizeDistance, sizeWithinQualityBounds 
 import { scoreRelease } from "./customFormatScoring.js";
 import { getMediaTypeConfig } from "./mediaTypes.js";
 import {
-  downloadClientFromRow,
   indexerFromRow,
   mediaItemFromRow,
-  qualityProfileFromRow,
   queueItemFromRow,
 } from "../db/mappers.js";
+import { listEnabledDownloadClients } from "./repository/downloadClients.js";
+import { getQualityProfile } from "./repository/qualityProfiles.js";
+import {
+  listDelayProfiles,
+  type DelayProfile,
+  type DelayProfileWithTag,
+} from "./repository/delayProfiles.js";
 import { importQueueItem, ImportSkippedError } from "./importer.js";
 import { notifyFailed, notifyGrabbed } from "./notifications.js";
 import { notifyQueueChanged } from "./realtime.js";
@@ -71,47 +76,10 @@ function isReleaseAvailableForSearch(item: MediaItem): boolean {
   return threshold.getTime() <= Date.now();
 }
 
-async function rowsToDownloadClients(): Promise<DownloadClient[]> {
-  return ((await db.prepare("SELECT * FROM download_clients WHERE enabled = 1").all()) as any[]).map(
-    downloadClientFromRow
-  );
-}
-
-async function getQualityProfile(id: number | null) {
-  if (!id) return null;
-  const row = await db.prepare("SELECT * FROM quality_profiles WHERE id = ?").get(id);
-  return row ? qualityProfileFromRow(row) : null;
-}
-
-interface DelayProfile {
-  enableUsenet: boolean;
-  enableTorrent: boolean;
-  usenetDelayMinutes: number;
-  torrentDelayMinutes: number;
-  bypassIfHighestQuality: boolean;
-}
-
-/** Every configured delay profile, tag-scoped ones first in their saved order, the untagged
- * default (if any) last — so `pickDelayProfile` can just take the first match. Fetched once per
- * search cycle rather than per item; the table is tiny and rarely changes mid-cycle. */
-async function loadDelayProfiles(): Promise<{ tagId: number | null; profile: DelayProfile }[]> {
-  const rows = (await db.prepare("SELECT * FROM delay_profiles ORDER BY (tag_id IS NULL), order_index, id").all()) as any[];
-  return rows.map((row) => ({
-    tagId: row.tag_id,
-    profile: {
-      enableUsenet: !!row.enable_usenet,
-      enableTorrent: !!row.enable_torrent,
-      usenetDelayMinutes: row.usenet_delay_minutes,
-      torrentDelayMinutes: row.torrent_delay_minutes,
-      bypassIfHighestQuality: !!row.bypass_if_highest_quality,
-    },
-  }));
-}
-
 /** First tag-matching profile wins; falls back to the untagged default profile, then to no delay
  * at all (every release eligible immediately) if nothing's configured — same "absent means off"
  * default every other opt-in gate in this file uses (isReleaseAvailableForSearch, quiet hours, ...). */
-function pickDelayProfile(profiles: { tagId: number | null; profile: DelayProfile }[], itemTagIds: number[]): DelayProfile | null {
+function pickDelayProfile(profiles: DelayProfileWithTag[], itemTagIds: number[]): DelayProfile | null {
   for (const p of profiles) {
     if (p.tagId !== null && itemTagIds.includes(p.tagId)) return p.profile;
   }
@@ -347,13 +315,13 @@ async function runAutoSearch(signal?: AbortSignal) {
   // indexer list.
   const indexers = await rowsToIndexers();
 
-  const clients = await rowsToDownloadClients();
+  const clients = await listEnabledDownloadClients();
   if (clients.length === 0) {
     log.info("[scheduler] skipping auto-search: no enabled download clients configured");
     return;
   }
 
-  const delayProfiles = await loadDelayProfiles();
+  const delayProfiles = await listDelayProfiles();
 
   const monitoredItems = (
     (await db.prepare("SELECT * FROM media_items WHERE monitored = 1").all()) as any[]
@@ -541,8 +509,8 @@ export interface BulkSearchResult extends BulkSearchTarget {
  * `monitored`/`hasFile` (the caller already chose specifically what to search for). */
 export async function searchAndGrabTargets(targets: BulkSearchTarget[]): Promise<BulkSearchResult[]> {
   const indexers = await rowsToIndexers();
-  const clients = await rowsToDownloadClients();
-  const delayProfiles = await loadDelayProfiles();
+  const clients = await listEnabledDownloadClients();
+  const delayProfiles = await listDelayProfiles();
   const results: BulkSearchResult[] = [];
 
   for (const t of targets) {
@@ -846,7 +814,7 @@ async function retryFailedGrab(match: QueueItem, reason: string): Promise<void> 
       return;
     }
 
-    const clients = await rowsToDownloadClients();
+    const clients = await listEnabledDownloadClients();
     const targetClient = pickClientForProtocol(clients, best.result.protocol);
     if (!targetClient) {
       await notifyFailed(mediaTitle, `${reason} (retried, but no "${best.result.protocol}" download client configured)`);
@@ -863,7 +831,7 @@ async function retryFailedGrab(match: QueueItem, reason: string): Promise<void> 
 
 /** Poll download clients for progress on active queue items, and import completed ones. */
 async function pollQueue() {
-  const clients = await rowsToDownloadClients();
+  const clients = await listEnabledDownloadClients();
   const active = (
     (await db.prepare("SELECT * FROM queue WHERE status IN ('queued','downloading')").all()) as any[]
   ).map(queueItemFromRow) as QueueItem[];
